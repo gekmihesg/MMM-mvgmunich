@@ -98,12 +98,12 @@ Module.register("mvgmunich", {
 		}
 		wrapperTable = document.createElement("table");
 		wrapperTable.className = "small";
-		wrapperTable.innerHTML = this.resultData[this.config.haltestelle];
+		wrapperTable.appendChild(this.resultData[this.config.haltestelle]);
 		return wrapperTable;
 	},
 
 	getHtml: function (jsonObject) {
-		let htmlText = "";
+		let tbody = document.createElement("tbody");
 
 		let visibleLines = 0;
 		const interruptions = new Set();
@@ -123,7 +123,6 @@ Module.register("mvgmunich", {
 		// calculate fade steps
 		const fadeStart = this.config.maxEntries * this.config.fadePoint;
 		const fadeSteps = this.config.maxEntries - fadeStart;
-		let fadeNum = 0;
 
 		for (let i = 0; i < jsonObject.departures.length; i++) {
 			if (visibleLines >= this.config.maxEntries) {
@@ -144,55 +143,80 @@ Module.register("mvgmunich", {
 
 			// calculate row opacity
 			let opacity = 1;
-			if (this.config.fade) {
-				if (fadeNum >= fadeStart) {
-					opacity = 1 - (fadeNum - fadeStart) / fadeSteps;
-				}
-				fadeNum ++;
+			if (this.config.fade && visibleLines >= fadeStart) {
+				opacity = 1 - (visibleLines - fadeStart) / fadeSteps;
 			}
 
+			let row = document.createElement("tr");
+			row.style.opacity = opacity;
 			if (this.config.showInterruptions && this.isLineAffected(apiResultItem.label)) {
-				htmlText += "<tr class='gray'";
+				row.className = "gray";
 			} else {
-				htmlText += "<tr class='normal'";
+				row.className = "normal";
 			}
-			htmlText += " style='opacity:" + opacity + "'>";
 
-			htmlText += "<td style='opacity:" + this.config.iconOpacity + "'>";
+			let cell = document.createElement("td");
+			let icon = document.createElement("span");
+			icon.className = "icon";
+			icon.style.opacity = this.config.iconOpacity;
 			if (this.config.showLineColors) {
 				// colorize with line color
-				htmlText += "<span style='color:white;background-color:" + apiResultItem.lineBackgroundColor + "' class='icon'>";
-			} else {
-				htmlText += "<span class='icon'>";
+				icon.style.color = "white";
+				icon.style.backgroundColor = apiResultItem.lineBackgroundColor;
 			}
 			if (this.config.showIcons) {
 				// add icon
-				htmlText += "<img src='" + this.data.path + "/resources/" + apiResultItem.product.toLocaleLowerCase() + ".svg'> ";
+				let logo = document.createElement("img");
+				logo.src = this.data.path + "/resources/" + apiResultItem.product.toLocaleLowerCase() + ".svg";
+				icon.appendChild(logo);
 			}
 			// add transport number
-			htmlText += "<span>" + apiResultItem.label + "</span></span></td>";
+			let label = document.createElement("span");
+			label.appendChild(document.createTextNode(apiResultItem.label));
+			icon.appendChild(label);
+			cell.appendChild(icon);
+			row.appendChild(cell);
+
 			// add last station aka direction
-			htmlText += "<td class='stationColumn'>" + apiResultItem.destination + "</td>";
+			cell = document.createElement("td")
+			cell.className = "stationColumn";
+			cell.appendChild(document.createTextNode(apiResultItem.destination));
+			row.appendChild(cell);
 			// check if user want's to see departure time
-			htmlText += this.showDepartureTime(apiResultItem.departureTime);
+			this.showDepartureTime(apiResultItem.departureTime, row);
 			// check if user want's to see walking time
-			htmlText += this.showWalkingTime(apiResultItem.departureTime);
+			this.showWalkingTime(apiResultItem.departureTime, row);
 			// check if user want's to see delay
-			htmlText += this.showDelay(apiResultItem.delay);
-			htmlText += "</tr>";
+			this.showDelay(apiResultItem.delay, row);
+
+			// append row
+			tbody.appendChild(row);
+			visibleLines++;
+
 			if (this.config.showInterruptionsDetails && this.isLineAffected(apiResultItem.label)) {
 				let interruption = this.getInterruptionsDetails(apiResultItem.label);
+				let colspan = row.childElementCount - 1;
 				if (!interruptions.has(interruption)) {
 					interruptions.add(interruption);
-					htmlText += "<tr><td></td><td class='empty' colspan='3'>" + interruption +"</td></tr>";
+					row = document.createElement("tr");
+					row.appendChild(document.createElement("td"));
+					cell = document.createElement("td");
+					cell.className = "empty";
+					cell.colSpan = colspan;
+					cell.appendChild(document.createTextNode(interruption));
 					if (this.config.countInterruptionsAsItemShown) {
+						if (this.config.fade && visibleLines >= fadeStart) {
+							opacity = 1 - (visibleLines - fadeStart) / fadeSteps;
+						}
 						visibleLines++;
 					}
+					row.style.opacity = opacity;
+					row.appendChild(cell);
+					tbody.appendChild(row);
 				}
 			}
-			visibleLines++;
 		}
-		return htmlText;
+		return tbody;
 	},
 
 	checkToIgnoreOrIncludeLine: function (lineName) {
@@ -230,56 +254,57 @@ Module.register("mvgmunich", {
 		return "";
 	},
 
-	showWalkingTime: function (departureTime) {
-		let htmlText = "";
+	showWalkingTime: function (departureTime, row) {
 		if (this.config.showWalkingTime) {
-			htmlText += "<td> / ";
+			// add departure time
+			let cell = document.createElement("td");
 			const startWalkingTime = new Date(departureTime - this.config.timeToWalk * MS_PER_MINUTE);
-			// check what kind of walking time user wants (absolute / relative)
-			if (this.config.walkingTimeFormat === "absolute") {
-				htmlText += this.getAbsoluteTime(startWalkingTime);
-			} else if (this.config.walkingTimeFormat === "relative") {
-				htmlText += this.getRelativeTime(startWalkingTime);
+			// check what kind of time user wants (absolute / relative)
+			let text;
+			if (this.config.trainDepartureTimeFormat === "absolute") {
+				text = this.getAbsoluteTime(startWalkingTime);
+			} else if (this.config.trainDepartureTimeFormat === "relative") {
+				text = this.getRelativeTime(startWalkingTime);
 			} else {
-				htmlText += "walkingTimeFormat config is wrong";
+				text = "walkingTimeFormat config is wrong";
 			}
-			htmlText += "</td>";
+			cell.appendChild(document.createTextNode(" / " + text));
+			row.append(cell);
 		}
-		return htmlText;
 	}
 	,
 
-	showDepartureTime: function (departureTime) {
-		let htmlText = "";
+	showDepartureTime: function (departureTime, row) {
 		if (this.config.showTrainDepartureTime) {
 			// add departure time
-			htmlText += "<td class='timing'>";
+			let cell = document.createElement("td");
+			cell.className = "timing";
 			const departureDate = new Date(departureTime);
 			// check what kind of time user wants (absolute / relative)
+			let text;
 			if (this.config.trainDepartureTimeFormat === "absolute") {
-				htmlText += this.getAbsoluteTime(departureDate);
+				text = this.getAbsoluteTime(departureDate);
 			} else if (this.config.trainDepartureTimeFormat === "relative") {
-				htmlText += this.getRelativeTime(departureDate);
+				text = this.getRelativeTime(departureDate);
 			} else {
-				htmlText += "trainDepartureTimeFormat config is wrong";
+				text = "trainDepartureTimeFormat config is wrong";
 			}
-			htmlText += "</td>";
+			cell.appendChild(document.createTextNode(text));
+			row.append(cell);
 		}
-		return htmlText;
 	}
 	,
 
-	showDelay: function (delay) {
-		let htmlText = "";
+	showDelay: function (delay, row) {
 		if (this.config.showDelay) {
 			// add delay
-			htmlText += "<td class='delay'>";
-			if (delay > 0) {
-				htmlText += "+" + delay;
+			let cell = document.createElement("td");
+			cell.className = "delay";
+			if (parseInt(delay) > 0) {
+				cell.appendChild(document.createTextNode("+" + delay));
 			}
-			htmlText += "</td>";
+			row.append(cell);
 		}
-		return htmlText;
 	}
 	,
 
